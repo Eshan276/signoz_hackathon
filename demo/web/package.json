@@ -1,0 +1,17 @@
+{
+  "name": "signoz-init-demo-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "axios": "1.7.9",
+    "@opentelemetry/sdk-node": "0.57.0",
+    "@opentelemetry/auto-instrumentations-node": "0.56.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.57.0"
+  }
+}

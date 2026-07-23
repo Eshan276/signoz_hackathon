@@ -1,0 +1,55 @@
+# Demo RAG stack: web (Node) -> api (FastAPI) -> qdrant + LLM
+#
+# This file is deliberately free of any observability configuration. It is what a
+# normal developer would write. `signoz init` must add full instrumentation
+# WITHOUT editing this file — everything lands in docker-compose.override.yml.
+#
+# If this file ever needs to change for telemetry to work, the premise is broken.
+
+name: signoz-demo
+
+services:
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+    environment:
+      API_URL: http://api:8000
+    # Wait for the API to be genuinely ready, not merely started: seeding Qdrant
+    # takes a moment, and without this the first requests return 502.
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    # .env is optional and gitignored. Present → real LLM calls (any
+    # OpenAI-compatible provider via LLM_BASE_URL); absent → the mock path.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      QDRANT_URL: http://qdrant:6333
+    healthcheck:
+      # SIGNOZ_INIT_DISABLE skips the instrumentation bootstrap in this throwaway
+      # interpreter — without it, sitecustomize runs on every probe and blows the
+      # timeout. Prefer curl; fall back to a bare python check.
+      test: ["CMD-SHELL", "SIGNOZ_INIT_DISABLE=1 python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      - qdrant
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+volumes:
+  qdrant-data:
