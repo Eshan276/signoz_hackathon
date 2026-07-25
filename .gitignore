@@ -11,9 +11,9 @@ docker-compose.override.yml
 infra/pours/
 infra/docs/
 
-# Go build output
+# Go build output — anchored so it does NOT match the cmd/signoz-init/ source dir
 /bin/
-signoz-init
+/signoz-init
 
 # Python
 __pycache__/
@@ -23,3 +23,6 @@ venv/
 
 # Node
 node_modules/
+
+# Release build output
+/dist/

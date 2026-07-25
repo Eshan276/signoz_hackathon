@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eshan/signoz-init/internal/detect"
+	"github.com/Eshan276/signoz_hackathon/internal/detect"
 )
 
 // Instrumentation packages we need present inside the image. The bootstraps are

@@ -7,6 +7,64 @@ in service of making that landing hit.
 
 ---
 
+## Copy-paste recording runbook (verified 2026-07-23)
+
+Every command below was run end-to-end and works. Two terminals: **T1** in the
+project, **T2** for traffic. On camera, drop the `--yes`/`--no-verify` flags so the
+prompts and verify step show live.
+
+```bash
+# ── OFF CAMERA: prep (T1) ───────────────────────────────────────────
+# 0. SigNoz ready?
+curl -sf http://localhost:8080/api/v1/health && echo ok
+curl -s -o /dev/null -w "otlp %{http_code}\n" -X POST http://localhost:4318/v1/traces \
+  -H 'Content-Type: application/json' -d '{"resourceSpans":[]}'          # want 200
+
+go build -o bin/signoz-init ./cmd/signoz-init
+
+# 1. fresh UNinstrumented copy, distinct name + ports, keyless (mock LLM)
+rm -rf /tmp/rag-demo && cp -r demo /tmp/rag-demo && cd /tmp/rag-demo
+rm -rf .signoz docker-compose.override.yml .env
+python3 - <<'PY'
+import json
+r=open('api/requirements.txt').read().split('# Added by `signoz init`')[0].rstrip()+'\n'
+open('api/requirements.txt','w').write(r)
+d=json.load(open('web/package.json'))
+d['dependencies']={k:v for k,v in d['dependencies'].items() if not k.startswith('@opentelemetry/')}
+open('web/package.json','w').write(json.dumps(d,indent=2)+'\n')
+PY
+sed -i 's/^name: signoz-demo$/name: rag-demo/; s/"3000:3000"/"3300:3000"/; s/"8000:8000"/"8300:8000"/; s/"6333:6333"/"6633:6333"/' docker-compose.yml
+
+# 2. PRE-WARM builds so nothing installs on camera
+docker compose build
+
+# ── ON CAMERA ───────────────────────────────────────────────────────
+# T2: start blind, prove the app works but SigNoz is empty
+docker compose up -d
+until curl -sf localhost:3300/health; do sleep 2; done          # (off-camera wait)
+curl -s -X POST localhost:3300/ask -H 'Content-Type: application/json' \
+  -d '{"q":"What is distributed tracing?"}' | jq          # → real answer, but SigNoz empty
+
+# T1: the one command  (cd in first, then run the built binary)
+cd /tmp/rag-demo
+/home/eshan/workdump/signoz_hackathon/bin/signoz-init init .   # detection table → diff → y
+#   — or from anywhere, pass the dir:  signoz-init init /tmp/rag-demo
+
+# T2: rebuild instrumented, WAIT for web, then send traffic
+docker compose up -d --build
+until curl -sf localhost:3300/health; do sleep 2; done          # ← don't skip this wait
+for i in 1 2 3 4; do curl -s -X POST localhost:3300/ask \
+  -H 'Content-Type: application/json' -d '{"q":"How does cost tracking work?"}' >/dev/null; done
+
+# → refresh SigNoz: trace web→api→qdrant→chat, cost_usd on the LLM span
+```
+
+**Gotcha proven on the dry run:** after `up -d --build`, the `web` container needs a
+few seconds before it accepts requests — sending traffic immediately returns `000`
+(connection refused). The `until curl` wait handles it; don't cut it out.
+
+---
+
 ## The core beat (memorise this)
 
 Split screen. SigNoz dashboard on the right, empty. Terminal on the left. You type

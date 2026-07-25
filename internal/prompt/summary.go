@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/eshan/signoz-init/internal/detect"
+	"github.com/Eshan276/signoz_hackathon/internal/detect"
 )
 
 // Summary prints what we found and what we intend to do about it.

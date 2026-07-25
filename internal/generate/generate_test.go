@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eshan/signoz-init/internal/detect"
+	"github.com/Eshan276/signoz_hackathon/internal/detect"
 )
 
 func TestOverrideIncludesRequiredWiring(t *testing.T) {

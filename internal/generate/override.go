@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/eshan/signoz-init/internal/detect"
+	"github.com/Eshan276/signoz_hackathon/internal/detect"
 )
 
 // Config controls how the override file is rendered.

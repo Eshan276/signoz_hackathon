@@ -48,15 +48,36 @@ emits `gen_ai.usage.cost_usd` from an editable pricing table, filling the gap.
 
 ---
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Eshan276/signoz_hackathon/main/install.sh | sh
+```
+
+No Go toolchain needed — this pulls a prebuilt binary for your platform. It lands in
+`~/.local/bin`; add that to your `PATH` if it isn't already.
+
+<details>
+<summary>Other ways to install</summary>
+
+```bash
+# With Go
+go install github.com/Eshan276/signoz_hackathon/cmd/signoz-init@latest
+
+# From source
+git clone https://github.com/Eshan276/signoz_hackathon && cd signoz_hackathon
+go build -o bin/signoz-init ./cmd/signoz-init
+```
+
+Windows: download the `.exe` from the [Releases](https://github.com/Eshan276/signoz_hackathon/releases) page.
+</details>
+
 ## Quick start
 
 ```bash
-# 1. Build the CLI
-go build -o bin/signoz-init ./cmd/signoz-init
-
-# 2. Stand up SigNoz (once) — see "Running SigNoz" below
-# 3. Point signoz-init at your Compose project
-./bin/signoz-init init ./demo
+# 1. Stand up SigNoz (once) — see "Running SigNoz" below
+# 2. Point signoz-init at your Compose project
+signoz-init init ./demo
 ```
 
 It shows you exactly what it will change, waits for confirmation, applies, then

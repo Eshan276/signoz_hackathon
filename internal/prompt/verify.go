@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/eshan/signoz-init/internal/verify"
+	"github.com/Eshan276/signoz_hackathon/internal/verify"
 )
 
 // VerifyResult reports what telemetry actually arrived.
