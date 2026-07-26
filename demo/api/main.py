@@ -13,6 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from llm import LLMClient
+from signoz_rag import annotate_rag
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION = "docs"
@@ -36,6 +37,9 @@ def get_qdrant() -> QdrantClient:
 
 class AskRequest(BaseModel):
     q: str
+    # Optional: ties this call to a conversation so cost/latency/groundedness
+    # roll up per session, not just per request. Defaults to "anonymous".
+    session_id: str = "anonymous"
 
 
 class AskResponse(BaseModel):
@@ -43,6 +47,7 @@ class AskResponse(BaseModel):
     sources: list[str]
     model: str
     usage: dict
+    groundedness: float
 
 
 # A tiny corpus so the demo is self-contained and deterministic.
@@ -131,9 +136,15 @@ def ask(req: AskRequest) -> AskResponse:
 
     completion = llm.complete(prompt)
 
+    # Attach session + groundedness to the request span. This is the RAG-quality
+    # signal auto-instrumentation can't produce: did the answer stay within the
+    # chunks we retrieved, or wander off (a cheap hallucination proxy)?
+    score = annotate_rag(req.session_id, completion.text, sources)
+
     return AskResponse(
         answer=completion.text,
         sources=sources,
         model=completion.model,
         usage=completion.usage,
+        groundedness=score,
     )

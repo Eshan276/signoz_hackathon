@@ -276,28 +276,42 @@ infra/               foundryctl casting.yaml
 
 **Not in scope:** Kubernetes; the alert rule pack (SigNoz's rule schema is
 undocumented). Cost governance is delivered through the dashboard.
-Gaps and improvements worth adding
 
-1. Quality/output evaluation layer
+---
 
-No built-in LLM-as-judge scoring, hallucination detection, or groundedness/faithfulness checks (RAG answer vs retrieved context)
-No semantic similarity or regression testing between prompt versions
-Langfuse/LangSmith/Braintrust all have this natively; SigNoz relies on third-party integration
+## Beyond cost: RAG quality & session signals
 
-2. RAG-specific observability
+Cost and latency tell you *that* something is wrong, not *what*. Two signals close
+that gap — and they're ones auto-instrumentation fundamentally cannot produce,
+because only the application knows them. `signoz-init` emits them as span
+attributes that ride the same trace and roll up natively in SigNoz.
 
-Vector DB latency is tracked, but not retrieval quality: chunk relevance scores, recall@k, context precision/recall, embedding drift over time
-No visibility into re-ranking steps or retrieval-to-generation attribution (which chunks actually influenced the final answer)
+**Groundedness** (`gen_ai.response.groundedness`, 0–1) — how much of the model's
+answer actually came from the retrieved context. A cheap, dependency-free lexical
+heuristic (no second LLM call, no key, no added latency) that still catches the
+failure that matters: an answer that wandered off the retrieved chunks. This is the
+*"an agent hallucinates in production"* line from the Flying Blind brief, made
+measurable. A grounded answer scores ~1.0; an off-context one scores ~0.
 
-4. Agent-specific signals
+**Session rollups** (`session.id`, `gen_ai.conversation.id`) — so cost, latency, and
+groundedness aggregate *per conversation*, not just per call. Turns "this request
+cost $0.00004" into "this conversation cost $0.40" — the number a budget owner
+actually cares about.
 
-Waterfall tracing exists, but no dedicated metrics for: loop/retry detection thresholds, planning-vs-execution time split, tool-call success/failure rate as a first-class metric, or multi-agent handoff failure tracking
-No agent "trajectory" comparison across runs (did it take the same path this time vs last time for the same task)
+Both surface in the dashboard (avg groundedness, groundedness-over-time, cost by
+conversation). See `demo/api/signoz_rag.py` for the ~60-line implementation.
 
-5. User-level / session-level analytics
+## Roadmap
 
-Token/cost tracking is per model/operation/user, but no conversation-level satisfaction proxies: thumbs up/down capture, session abandonment rate, repeated-question rate (signal that the bot failed the first time)
+Deeper LLM-quality signals we'd add next, roughly in priority order:
 
-6. Cost optimization beyond tracking
-
-Tracks spend but doesn't seem to suggest optimization (e.g., prompt compression opportunities, caching hit-rate dashboards, routing suggestions to cheaper models for simple queries)
+- **LLM-as-judge evaluation** — faithfulness/relevance scoring via a grader model,
+  for teams that want more than the lexical groundedness heuristic.
+- **Retrieval quality** — chunk relevance scores, recall@k, and which retrieved
+  chunks actually influenced the answer (retrieval-to-generation attribution).
+- **Agent signals** — loop/retry detection, planning-vs-execution time split,
+  tool-call success rate as a first-class metric, trajectory comparison across runs.
+- **Session analytics** — repeated-question and abandonment rates as
+  first-response-failure proxies (the `session.id` plumbing is already in place).
+- **Cost optimization** — cache hit-rate, prompt-compression opportunities, and
+  cheaper-model routing suggestions, on top of the spend tracking that exists today.

@@ -22,9 +22,12 @@ app.post('/ask', async (req, res) => {
   if (!q) {
     return res.status(400).json({ error: 'body must include "q"' });
   }
+  // Forward the session id so cost/latency/groundedness roll up per conversation.
+  const session_id = req.body?.session_id || 'anonymous';
 
   try {
-    const { data } = await axios.post(`${API_URL}/ask`, { q }, { timeout: 30000 });
+    const { data } = await axios.post(
+      `${API_URL}/ask`, { q, session_id }, { timeout: 30000 });
     res.json({ ...data, served_by: 'web-gateway' });
   } catch (err) {
     const status = err.response?.status || 502;
