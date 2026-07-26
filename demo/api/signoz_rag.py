@@ -57,11 +57,34 @@ def groundedness(answer: str, sources: Iterable[str]) -> float:
     return round(len(grounded) / len(answer_tokens), 4)
 
 
-def annotate_rag(session_id: str, answer: str, sources: Iterable[str]) -> float:
-    """Attach session + groundedness attributes to the active span.
+def begin_session(session_id: str) -> None:
+    """Tag the whole request (all spans, including the LLM call) with a session.
 
-    Returns the groundedness score (also useful to the caller). Never raises —
-    telemetry must not break the request.
+    Call this at the START of the request, before the LLM/vector spans are
+    created — signoz-init's session processor stamps session.id onto every span
+    started while this is set, which is what makes "cost by conversation" work
+    (cost lives on the LLM span, not the request span).
+
+    Falls back to tagging just the current span if the bootstrap isn't present,
+    so the demo still does something useful uninstrumented.
+    """
+    try:
+        import sitecustomize  # signoz-init's bootstrap
+
+        sitecustomize.set_session(session_id)
+    except Exception:  # noqa: BLE001 - bootstrap not present
+        if trace is not None:
+            try:
+                trace.get_current_span().set_attribute("session.id", session_id)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def annotate_rag(answer: str, sources: Iterable[str]) -> float:
+    """Attach groundedness attributes to the active span. Returns the score.
+
+    Session tagging is handled separately by begin_session(); this focuses on the
+    RAG-quality signal. Never raises — telemetry must not break the request.
     """
     src = list(sources)
     score = groundedness(answer, src)
@@ -70,10 +93,6 @@ def annotate_rag(session_id: str, answer: str, sources: Iterable[str]) -> float:
     try:
         span = trace.get_current_span()
         if span is not None:
-            # gen_ai.* keeps these alongside the token/cost attributes SigNoz
-            # already understands; session.id is the OTel-conventional name.
-            span.set_attribute("session.id", session_id)
-            span.set_attribute("gen_ai.conversation.id", session_id)
             span.set_attribute("gen_ai.response.groundedness", score)
             span.set_attribute("gen_ai.rag.source_count", len(src))
     except Exception:  # noqa: BLE001

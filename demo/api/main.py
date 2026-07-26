@@ -13,7 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from llm import LLMClient
-from signoz_rag import annotate_rag
+from signoz_rag import annotate_rag, begin_session
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION = "docs"
@@ -117,6 +117,10 @@ def health() -> dict:
 # Verified both ways 2026-07-22.
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest) -> AskResponse:
+    # Tag the whole request (including the LLM span) with the session, before any
+    # child spans are created, so cost/latency/groundedness roll up per session.
+    begin_session(req.session_id)
+
     # Uses the older search() rather than query_points(): OpenLLMetry's Qdrant
     # instrumentor wraps search/query but not query_points, so the newer API
     # produces no vector-DB span. Verified against
@@ -136,10 +140,10 @@ def ask(req: AskRequest) -> AskResponse:
 
     completion = llm.complete(prompt)
 
-    # Attach session + groundedness to the request span. This is the RAG-quality
-    # signal auto-instrumentation can't produce: did the answer stay within the
-    # chunks we retrieved, or wander off (a cheap hallucination proxy)?
-    score = annotate_rag(req.session_id, completion.text, sources)
+    # Attach groundedness to the request span — the RAG-quality signal
+    # auto-instrumentation can't produce: did the answer stay within the chunks we
+    # retrieved, or wander off (a cheap hallucination proxy)?
+    score = annotate_rag(completion.text, sources)
 
     return AskResponse(
         answer=completion.text,

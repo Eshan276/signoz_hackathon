@@ -311,6 +311,60 @@ def _install_ai_instrumentation() -> None:
         _log(f"ai instrumentation: {', '.join(installed)}")
 
 
+# The current session id, set per-request by the app via signoz_init.set_session().
+# A contextvar so it is correct under async and threadpool concurrency.
+import contextvars  # noqa: E402
+
+_current_session: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "signoz_init_session", default=""
+)
+
+
+def set_session(session_id: str) -> None:
+    """Tag every span in the current request with a session/conversation id.
+
+    Call this once at the start of a request. Because cost lives on the LLM span
+    and the request lives on the server span — different spans — stamping the id
+    onto *all* spans via a processor is what lets SigNoz roll cost, latency, and
+    groundedness up per conversation. Without this, a "cost by session" query
+    finds no single span carrying both cost and session.
+    """
+    if session_id:
+        _current_session.set(str(session_id))
+
+
+def _install_session_processor() -> None:
+    """Stamp session.id onto every span at start, from the request contextvar."""
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import SpanProcessor
+
+        outer = _current_session
+
+        class SessionProcessor(SpanProcessor):
+            def on_start(self, span, parent_context=None):
+                sid = outer.get()
+                if sid:
+                    span.set_attribute("session.id", sid)
+                    span.set_attribute("gen_ai.conversation.id", sid)
+
+            def on_end(self, span):
+                pass
+
+            def shutdown(self):
+                pass
+
+            def force_flush(self, timeout_millis: int = 30000) -> bool:
+                return True
+
+        provider = trace.get_tracer_provider()
+        if hasattr(provider, "add_span_processor"):
+            provider.add_span_processor(SessionProcessor())
+            _log("session attribution enabled")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"session processor unavailable ({exc})")
+
+
 def _bootstrap() -> None:
     if os.environ.get("SIGNOZ_INIT_DISABLE"):
         return
@@ -355,6 +409,7 @@ def _bootstrap() -> None:
     _promote_global_tracer_provider()
     _install_http_instrumentation()
     _install_ai_instrumentation()
+    _install_session_processor()
 
     pricing = _load_pricing()
     if pricing:
