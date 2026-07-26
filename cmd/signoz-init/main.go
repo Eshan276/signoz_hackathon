@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -187,17 +188,28 @@ func verifyPhase(opts initOptions, services []detect.Service, out *os.File, colo
 		return nil
 	}
 
-	fmt.Fprintf(out, "\nRestart your stack, then send it some traffic:\n")
-	fmt.Fprintf(out, "  docker compose up -d --build\n\n")
-
+	// Offer to rebuild the stack ourselves. The instrumentation only takes effect
+	// after a rebuild (the images COPY source in), so making the user switch
+	// terminals to run this is exactly the friction the tool exists to remove.
 	ok, err := prompt.Confirm(os.Stdin, out,
-		"Watch for incoming telemetry now?", true)
-	if err != nil || !ok {
+		"Rebuild and restart the stack now (docker compose up -d --build)?", true)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		printNextSteps(out)
 		return nil
 	}
 
-	fmt.Fprintf(out, "\nWatching via %s (Ctrl-C to stop)...\n", backend.Name())
+	if err := composeUp(opts.dir, out); err != nil {
+		fmt.Fprintf(out, "\nCould not rebuild automatically: %v\n", err)
+		printNextSteps(out)
+		return nil
+	}
+
+	fmt.Fprintf(out, "\nWatching via %s for up to %s...\n",
+		backend.Name(), verify.DefaultOptions(nil).Timeout)
+	fmt.Fprintf(out, "Send your app a request in another terminal if it has no traffic yet.\n")
 
 	res, err := verify.Wait(ctx, backend, verify.DefaultOptions(expected), nil)
 	if err != nil {
@@ -217,6 +229,21 @@ func printNextSteps(out *os.File) {
 	fmt.Fprintf(out, "  docker compose up -d --build\n")
 	fmt.Fprintf(out, "\nThen send traffic to your app and check SigNoz.\n")
 	fmt.Fprintf(out, "To undo everything: rm %s\n", generate.OverrideFilename)
+}
+
+// composeUp runs `docker compose up -d --build` in the project directory,
+// streaming its output so the user sees the rebuild rather than a silent hang.
+func composeUp(dir string, out *os.File) error {
+	fmt.Fprintf(out, "\nRebuilding — this can take a minute...\n\n")
+
+	cmd := exec.Command("docker", "compose", "up", "-d", "--build")
+	cmd.Dir = dir
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker compose up failed: %w", err)
+	}
+	return nil
 }
 
 // planChanges assembles every file we intend to write, so the user sees the
